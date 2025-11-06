@@ -7,7 +7,7 @@ Agents:
 ✨ DocGenie — Generates Markdown documentation with Mermaid diagrams
 ⚙️ Setup Instructions
 Clone this repository
-git clone https://github.com/JayMwakideu/agentic-codebase-genius.git
+git clone https://github.com/Samuelmusembi/Codebase-Genius-
 cd agentic-codebase-genius
 Create and activate a virtual environment
 
