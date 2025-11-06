@@ -1,1 +1,126 @@
-Backend
+# main.jac
+# Codebase Genius - Jac backend (single-file)
+# Exposes walker `generate_docs` which accepts `url` and runs the pipeline.
+
+# Supervisor walker (orchestrator)
+walker supervisor {
+    has repo_url = "";
+    has repo_name = "";
+    has repo_map = none;
+    has ccg = none;
+    has out_path = "";
+
+    can entrypoint() {
+        report("Supervisor started for: " + repo_url);
+        if not _valid_url(repo_url) {
+            report("ERROR: invalid URL: " + repo_url);
+            stop;
+        }
+        repo_name = _repo_name_from_url(repo_url);
+        try {
+            repo_map = spawn repo_mapper with repo_url:repo_url;
+            if repo_map == none {
+                report("ERROR: repo mapping failed");
+                stop;
+            }
+            ccg = spawn code_analyzer with repo_map:repo_map;
+            if ccg == none {
+                report("ERROR: code analysis failed");
+                stop;
+            }
+            out_path = spawn doc_genie with repo_name:repo_name, ccg:ccg;
+            report("Pipeline finished. Docs: " + out_path);
+            return out_path;
+        } catch(err) {
+            report("Supervisor error: " + err);
+            stop;
+        }
+    }
+
+    can _valid_url(u) -> bool {
+        return u.startswith("http://") or u.startswith("https://") or u.startswith("git@");
+    }
+    can _repo_name_from_url(u) -> string {
+        let parts = u.split("/");
+        return parts[parts.len - 1].replace(".git","");
+    }
+}
+
+# Repo mapper walker - clones and returns a map object (calls Python helper)
+walker repo_mapper {
+    has repo_url = "";
+    has out = none;
+
+    can entrypoint() {
+        report("Repo mapper started...");
+        try {
+            py_import("helpers.parser", "clone_and_map");
+            let result = py_call("clone_and_map", repo_url);
+            out = result;
+            report("Repo mapped: repo=" + out["repo_name"] + " files=" + out["file_count"].to_string());
+            return out;
+        } catch(err) {
+            report("Repo mapper error: " + err);
+            return none;
+        }
+    }
+}
+
+# Code analyzer walker - builds a CCG (calls Python helper)
+walker code_analyzer {
+    has repo_map = none;
+    has ccg = none;
+
+    can entrypoint() {
+        report("Code analyzer started...");
+        if repo_map == none {
+            report("No repo_map provided.");
+            return none;
+        }
+        try {
+            py_import("helpers.parser", "build_ccg");
+            let result = py_call("build_ccg", repo_map);
+            ccg = result;
+            report("CCG built: nodes=" + ccg["node_count"].to_string() + " edges=" + ccg["edge_count"].to_string());
+            return ccg;
+        } catch(err) {
+            report("Code analyzer error: " + err);
+            return none;
+        }
+    }
+}
+
+# DocGenie walker - generate Markdown docs (calls Python helper)
+walker doc_genie {
+    has repo_name = "";
+    has ccg = none;
+    has out_path = "";
+
+    can entrypoint() {
+        report("DocGenie started for: " + repo_name);
+        try {
+            py_import("helpers.parser", "generate_docs");
+            let result = py_call("generate_docs", repo_name, ccg);
+            out_path = result;
+            report("Documentation generated at: " + out_path);
+            return out_path;
+        } catch(err) {
+            report("DocGenie error: " + err);
+            return none;
+        }
+    }
+}
+
+# Convenience exposed walker to invoke the pipeline
+walker generate_docs {
+    has url = "";
+    can entrypoint() {
+        if url == "" {
+            report("ERROR: no URL provided.");
+            stop;
+        }
+        spawn supervisor with repo_url:url;
+    }
+}
+
+# End main.jac
